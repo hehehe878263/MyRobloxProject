@@ -1,6 +1,6 @@
 local Settings = {
     SilentAim = true,
-    FOV = 150,
+    FOV = 200,
     TracerColor = Color3.fromRGB(255, 0, 0),
     TargetPart = "Head"
 }
@@ -10,6 +10,17 @@ local LocalPlayer = Players.LocalPlayer
 local Mouse = LocalPlayer:GetMouse()
 local Camera = workspace.CurrentCamera
 local RunService = game:GetService("RunService")
+
+task.spawn(function()
+    pcall(function()
+        local Gui = LocalPlayer:WaitForChild("PlayerGui")
+        for _, v in pairs(Gui:GetDescendants()) do
+            if v:IsA("TextButton") and (v.Text:lower():find("play") or v.Text:lower():find("skip")) then
+                v:Activate()
+            end
+        end
+    end)
+end)
 
 local FOVCircle = Drawing.new("Circle")
 FOVCircle.Thickness = 2
@@ -21,7 +32,6 @@ FOVCircle.Filled = false
 local function GetClosestPlayer()
     local Target = nil
     local Dist = Settings.FOV
-    
     for _, v in pairs(Players:GetPlayers()) do
         if v ~= LocalPlayer and v.Character and v.Character:FindFirstChild(Settings.TargetPart) then
             local Pos, OnScreen = Camera:WorldToViewportPoint(v.Character[Settings.TargetPart].Position)
@@ -40,17 +50,15 @@ end
 local Lines = {}
 RunService.RenderStepped:Connect(function()
     FOVCircle.Position = Vector2.new(Mouse.X, Mouse.Y + 36)
-    
     for _, line in pairs(Lines) do line:Remove() end
     Lines = {}
-    
     local Target = GetClosestPlayer()
     if Target and Target.Character then
         local Pos, OnScreen = Camera:WorldToViewportPoint(Target.Character[Settings.TargetPart].Position)
         if OnScreen then
             local Tracer = Drawing.new("Line")
             Tracer.Visible = true
-            Tracer.From = Vector2.new(Camera.ViewportSize.X / 2, Camera.ViewportSize.Y)
+            Tracer.From = Vector2.new(Camera.ViewportSize.X / 2, Camera.ViewportSize.Y / 2)
             Tracer.To = Vector2.new(Pos.X, Pos.Y)
             Tracer.Color = Settings.TracerColor
             Tracer.Thickness = 1.5
@@ -59,35 +67,38 @@ RunService.RenderStepped:Connect(function()
     end
 end)
 
-local mt = getrawmetatable(game)
-local oldNamecall = mt.__namecall
-setreadonly(mt, false)
+task.spawn(function()
+    for _, v in pairs(game:GetDescendants()) do
+        if v:IsA("ModuleScript") and (v.Name:lower():find("gun") or v.Name:lower():find("weapon")) then
+            pcall(function()
+                local m = require(v)
+                if type(m) == "table" then
+                    m.Recoil = 0
+                    m.Spread = 0
+                    m.BulletVelocity = 10000
+                    m.Auto = true
+                end
+            end)
+        end
+    end
+end)
 
+local mt = getrawmetatable(game)
+local old = mt.__namecall
+setreadonly(mt, false)
 mt.__namecall = newcclosure(function(self, ...)
-    local method = getnamecallmethod()
     local args = {...}
-    
-    if method == "FireServer" and Settings.SilentAim then
+    local method = getnamecallmethod()
+    if method == "FireServer" or method == "InvokeServer" then
         local Target = GetClosestPlayer()
-        if Target and Target.Character then
-            for i, v in pairs(args) do
-                if type(v) == "Vector3" then
+        if Target then
+            for i, arg in pairs(args) do
+                if type(arg) == "Vector3" then
                     args[i] = Target.Character[Settings.TargetPart].Position
                 end
             end
         end
     end
-    return oldNamecall(self, unpack(args))
+    return old(self, unpack(args))
 end)
 setreadonly(mt, true)
-
-pcall(function()
-    local GunModule = require(game:GetService("ReplicatedStorage").Modules.Game.ItemTypes.Gun)
-    for _, gun in pairs(GunModule) do
-        if type(gun) == "table" then
-            gun.BulletVelocity = 999
-            gun.Spread = 0
-            gun.Recoil = 0
-        end
-    end
-end)
