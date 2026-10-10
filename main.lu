@@ -1,104 +1,744 @@
-local Settings = {
-    SilentAim = true,
-    FOV = 200,
-    TracerColor = Color3.fromRGB(255, 0, 0),
-    TargetPart = "Head"
+if not game:IsLoaded() then game.Loaded:Wait() end
+repeat task.wait() until game.Players.LocalPlayer and game.Players.LocalPlayer.PlayerGui
+
+local function c() return getgenv() end
+local Service = setmetatable({}, {__index = function(self, name) return game:GetService(name) end})
+
+if c().DARKPOWER_LOADED then return end
+c().DARKPOWER_LOADED = true
+
+local Players = Service.Players
+local UserInputService = Service.UserInputService
+local ReplicatedStorage = Service.ReplicatedStorage
+local GuiService = Service.GuiService
+local VirtualInputManager = Service.VirtualInputManager
+local RunService = Service.RunService
+local Debris = Service.Debris
+
+if not c().ACBYPASS then
+    task.spawn(xpcall, function()
+        repeat task.wait(2)
+            if Players.LocalPlayer.PlayerGui:FindFirstChild('SplashScreenGui') and not Players.LocalPlayer:GetAttribute('InMenuCharacterCreator') and not Players.LocalPlayer.PlayerGui:FindFirstChild('Slideshow'):FindFirstChild('SlideshowHolder').Visible then
+                GuiService.SelectedObject = Players.LocalPlayer.PlayerGui:FindFirstChild('SplashScreenGui').Frame.PlayButton
+                VirtualInputManager:SendKeyEvent(true, Enum.KeyCode.Return, false, game)
+                VirtualInputManager:SendKeyEvent(false, Enum.KeyCode.Return, false, game)
+            elseif not Players.LocalPlayer.PlayerGui:FindFirstChild('SplashScreenGui') and Players.LocalPlayer:GetAttribute('InMenuCharacterCreator') then
+                GuiService.SelectedObject = Players.LocalPlayer.PlayerGui:FindFirstChild('CharacterCreator'):FindFirstChild('MenuFrame').AvatarMenuSkipButton
+                VirtualInputManager:SendKeyEvent(true, Enum.KeyCode.Return, false, game)
+                VirtualInputManager:SendKeyEvent(false, Enum.KeyCode.Return, false, game)
+            elseif Players.LocalPlayer.PlayerGui:FindFirstChild('SplashScreenGui') and not Players.LocalPlayer:GetAttribute('InMenuCharacterCreator') and Players.LocalPlayer.PlayerGui:FindFirstChild('Slideshow'):FindFirstChild('SlideshowHolder').Visible then
+                GuiService.SelectedObject = Players.LocalPlayer.PlayerGui:FindFirstChild('Slideshow'):FindFirstChild('SlideshowHolder'):FindFirstChild('SlideshowCloseButton')
+                VirtualInputManager:SendKeyEvent(true, Enum.KeyCode.Return, false, game)
+                VirtualInputManager:SendKeyEvent(false, Enum.KeyCode.Return, false, game)
+            elseif not Players.LocalPlayer.PlayerGui:FindFirstChild('SplashScreenGui') and not Players.LocalPlayer:GetAttribute('InMenuCharacterCreator') and not Players.LocalPlayer.PlayerGui:FindFirstChild('Slideshow'):FindFirstChild('SlideshowHolder').Visible then
+                local Net = require(ReplicatedStorage.Modules.Core.Net)
+                local func = debug.getupvalue(Net.get, 2)
+                debug.setconstant(func, 3, "___Bypass")
+                debug.setconstant(func, 4, "___Bypass")
+                identifyexecutor = nil
+                task.wait()
+                GuiService.SelectedObject = nil
+                c().ACBYPASS = true
+            end
+        until c().ACBYPASS
+    end, warn)
+end
+repeat task.wait() until c().ACBYPASS
+
+local Client = Players.LocalPlayer
+local Character = Client.Character or Client.CharacterAdded:Wait()
+local Humanoid = Character:WaitForChild("Humanoid")
+local RootPart = Character:WaitForChild("HumanoidRootPart")
+local CurrentCamera = workspace.CurrentCamera
+
+Client.CharacterAdded:Connect(function(newChar)
+    Character = newChar
+    Humanoid = Character:WaitForChild("Humanoid")
+    RootPart = Character:WaitForChild("HumanoidRootPart")
+end)
+
+local Char = require(ReplicatedStorage.Modules.Core.Char)
+local SprintModule = require(ReplicatedStorage.Modules.Game.Sprint)
+local Network = require(ReplicatedStorage.Modules.Core.Net)
+local RagdollModule = require(ReplicatedStorage.Modules.Game.Ragdoll)
+
+local DroppedFolder = workspace:FindFirstChild('DroppedItems')
+
+local RarityData = {
+    Common = Color3.fromRGB(255,255,255),
+    Uncommon = Color3.fromRGB(99,255,52),
+    Rare = Color3.fromRGB(51,170,255),
+    Epic = Color3.fromRGB(237,44,255),
+    Legendary = Color3.fromRGB(255,150,0),
+    Omega = Color3.fromRGB(255,20,51)
 }
 
-local Players = game:GetService("Players")
-local LocalPlayer = Players.LocalPlayer
-local Mouse = LocalPlayer:GetMouse()
-local Camera = workspace.CurrentCamera
-local RunService = game:GetService("RunService")
+local TracerColors = {
+    Red = Color3.fromRGB(255,0,0),
+    Orange = Color3.fromRGB(255,140,0),
+    Yellow = Color3.fromRGB(255,255,0),
+    Blue = Color3.fromRGB(0,150,255),
+    Navy = Color3.fromRGB(0,0,180),
+    Black = Color3.fromRGB(20,20,20),
+    White = Color3.fromRGB(255,255,255),
+    Purple = Color3.fromRGB(180,0,255),
+    Pink = Color3.fromRGB(255,105,180),
+    Green = Color3.fromRGB(0,255,0)
+}
 
-task.spawn(function()
-    pcall(function()
-        local Gui = LocalPlayer:WaitForChild("PlayerGui")
-        for _, v in pairs(Gui:GetDescendants()) do
-            if v:IsA("TextButton") and (v.Text:lower():find("play") or v.Text:lower():find("skip")) then
-                v:Activate()
-            end
-        end
-    end)
-end)
-
-local FOVCircle = Drawing.new("Circle")
-FOVCircle.Thickness = 2
-FOVCircle.Color = Color3.fromRGB(0, 255, 0)
-FOVCircle.Visible = true
-FOVCircle.Radius = Settings.FOV
-FOVCircle.Filled = false
-
-local function GetClosestPlayer()
-    local Target = nil
-    local Dist = Settings.FOV
-    for _, v in pairs(Players:GetPlayers()) do
-        if v ~= LocalPlayer and v.Character and v.Character:FindFirstChild(Settings.TargetPart) then
-            local Pos, OnScreen = Camera:WorldToViewportPoint(v.Character[Settings.TargetPart].Position)
-            if OnScreen then
-                local MouseDist = (Vector2.new(Mouse.X, Mouse.Y) - Vector2.new(Pos.X, Pos.Y)).Magnitude
-                if MouseDist < Dist then
-                    Target = v
-                    Dist = MouseDist
-                end
-            end
-        end
+local function GetDistanceRoot(obj)
+    if not RootPart or not RootPart.Parent then return 0 end
+    if typeof(obj) == "Instance" then
+        if obj:IsA("BasePart") then return (obj.Position - RootPart.Position).Magnitude
+        elseif obj:IsA("Model") then return (obj:GetPivot().Position - RootPart.Position).Magnitude end
+    elseif typeof(obj) == "Vector3" then
+        return (obj - RootPart.Position).Magnitude
     end
-    return Target
+    return 0
 end
 
-local Lines = {}
-RunService.RenderStepped:Connect(function()
-    FOVCircle.Position = Vector2.new(Mouse.X, Mouse.Y + 36)
-    for _, line in pairs(Lines) do line:Remove() end
-    Lines = {}
-    local Target = GetClosestPlayer()
-    if Target and Target.Character then
-        local Pos, OnScreen = Camera:WorldToViewportPoint(Target.Character[Settings.TargetPart].Position)
-        if OnScreen then
-            local Tracer = Drawing.new("Line")
-            Tracer.Visible = true
-            Tracer.From = Vector2.new(Camera.ViewportSize.X / 2, Camera.ViewportSize.Y / 2)
-            Tracer.To = Vector2.new(Pos.X, Pos.Y)
-            Tracer.Color = Settings.TracerColor
-            Tracer.Thickness = 1.5
-            table.insert(Lines, Tracer)
+local function IsAlive(model)
+    if not model then return false end
+    local h = model:FindFirstChildOfClass('Humanoid')
+    if not h then return false end
+    local r = model:FindFirstChild('HumanoidRootPart')
+    if not r then return false end
+    return h.Health > 0
+end
+
+local function Draw(t, props)
+    local o = Drawing.new(t)
+    for k, v in pairs(props or {}) do o[k] = v end
+    return o
+end
+
+local function W2V(obj)
+    local pos = typeof(obj) == "Vector3" and obj or obj.Position
+    return CurrentCamera:WorldToViewportPoint(pos)
+end
+
+local function DistStart(a, b)
+    if typeof(a) == "Vector2" and typeof(b) == "Vector2" then return (a-b).Magnitude end
+    return math.huge
+end
+
+local function SortAttr(inst)
+    local k = {}
+    for key in pairs(inst:GetAttributes()) do table.insert(k, key) end
+    table.sort(k)
+    return k
+end
+
+local function solveQ(A,B,C)
+    local d = B*B - 4*A*C
+    if d < 0 then return nil, nil end
+    local s = math.sqrt(d)
+    return (-B - s)/(2*A), (-B + s)/(2*A)
+end
+
+local function flightTime(dir, grav, speed)
+    local r1, r2 = solveQ(grav:Dot(grav)/3.8, grav:Dot(dir) - speed*speed, dir:Dot(dir))
+    if r1 and r2 then
+        if r1 > 0 and r1 < r2 then return math.sqrt(r1)
+        elseif r2 > 0 and r2 < r1 then return math.sqrt(r2) end
+    end
+    return 0
+end
+
+local function countT(t)
+    local n = 0
+    for _ in pairs(t) do n = n + 1 end
+    return n
+end
+
+local function makeHex(seg)
+    seg = seg or 6
+    local l = {}
+    for i = 1, seg do
+        l[i] = Draw("Line", { Visible = false, Color = Color3.fromRGB(255,255,255), Thickness = 1.5, Transparency = 1 })
+    end
+    return l
+end
+
+local function updateHex(hex, center, radius, visible, color, rotation)
+    rotation = rotation or 0
+    local n = countT(hex)
+    for i = 1, n do
+        local a1 = math.rad((i-1) * (360/n) - 90 + rotation)
+        local a2 = math.rad(i * (360/n) - 90 + rotation)
+        local p1 = Vector2.new(center.X + math.cos(a1)*radius, center.Y + math.sin(a1)*radius)
+        local p2 = Vector2.new(center.X + math.cos(a2)*radius, center.Y + math.sin(a2)*radius)
+        hex[i].From = p1
+        hex[i].To = p2
+        hex[i].Color = color
+        hex[i].Visible = visible
+    end
+end
+
+local function removeHex(hex)
+    if hex then
+        for _, l in pairs(hex) do
+            if l.Remove then l:Remove() end
+        end
+    end
+end
+
+local DrawingsData = { Players = {}, Item = {} }
+local AimHex = makeHex(6)
+local AimHexRadius = 200
+
+local function createPD(player)
+    return {
+        Name = Draw("Text", { Visible = false, Color = Color3.new(1,1,1), Size = 15, Center = true, Outline = true, OutlineColor = Color3.new(0,0,0) }),
+        Distance = Draw("Text", { Visible = false, Color = Color3.new(1,1,1), Size = 14, Center = true, Outline = true, OutlineColor = Color3.new(0,0,0) }),
+        BoxAround = Draw("Square", { Visible = false, Color = Color3.fromRGB(201,12,204), Thickness = 1, Transparency = 1, Filled = false }),
+        HpBar = Draw("Line", { Visible = false, Color = Color3.new(0,1,0), Thickness = 2 }),
+        TargetHex = makeHex(6),
+        AimTracer = Draw("Line", { Visible = false, Color = Color3.fromRGB(255,0,0), Thickness = 1.5 })
+    }
+end
+
+for _, v in pairs(Players:GetPlayers()) do
+    if v ~= Client then
+        DrawingsData.Players[v] = createPD(v)
+        DrawingsData.Players[v].Name.Text = v.Name
+    end
+end
+
+Players.PlayerAdded:Connect(function(p)
+    if p ~= Client then
+        DrawingsData.Players[p] = createPD(p)
+        DrawingsData.Players[p].Name.Text = p.Name
+    end
+end)
+
+Players.PlayerRemoving:Connect(function(p)
+    if DrawingsData.Players[p] then
+        for _, d in pairs(DrawingsData.Players[p]) do
+            if d.Remove then d:Remove() end
+        end
+        DrawingsData.Players[p] = nil
+    end
+end)
+
+task.spawn(function()
+    while task.wait() do
+        if c().Snap and IsAlive(Character) then
+            xpcall(function()
+                if not c().SnapBaseY then
+                    c().SnapBaseY = RootPart.Position.Y
+                end
+                local targetY = c().SnapBaseY - (c().SnapAmount or 10)
+                local deltaY = targetY - RootPart.Position.Y
+                Character:PivotTo(RootPart.CFrame * CFrame.new(0, deltaY, 0))
+            end, warn)
+        else
+            c().SnapBaseY = nil
         end
     end
 end)
 
 task.spawn(function()
-    for _, v in pairs(game:GetDescendants()) do
-        if v:IsA("ModuleScript") and (v.Name:lower():find("gun") or v.Name:lower():find("weapon")) then
-            pcall(function()
-                local m = require(v)
-                if type(m) == "table" then
-                    m.Recoil = 0
-                    m.Spread = 0
-                    m.BulletVelocity = 10000
-                    m.Auto = true
+    while task.wait() do
+        if c().ItemDroppedGraber then
+            xpcall(function()
+                for _, v in pairs(DroppedFolder:GetChildren()) do
+                    if v:IsA('Model') and v:FindFirstChild("PickUpZone") then
+                        if GetDistanceRoot(v) < (c().ItemDroppedRange or 15) then
+                            Network.get('pickup_dropped_item', v)
+                        end
+                    end
                 end
-            end)
+            end, warn)
         end
     end
 end)
 
-local mt = getrawmetatable(game)
-local old = mt.__namecall
-setreadonly(mt, false)
-mt.__namecall = newcclosure(function(self, ...)
-    local args = {...}
-    local method = getnamecallmethod()
-    if method == "FireServer" or method == "InvokeServer" then
-        local Target = GetClosestPlayer()
-        if Target then
-            for i, arg in pairs(args) do
-                if type(arg) == "Vector3" then
-                    args[i] = Target.Character[Settings.TargetPart].Position
+task.spawn(function()
+    while task.wait() do
+        if c().VehicleSpawn then
+            xpcall(function()
+                local Vehicles = workspace:FindFirstChild("Vehicles")
+                if Vehicles then
+                    for _, v in pairs(Vehicles:GetChildren()) do
+                        if v:IsA("Model") and v:GetAttribute("OwnerUserId") == Client.UserId then
+                            v:PivotTo(RootPart.CFrame * CFrame.new(0, 5, -5))
+                            break
+                        end
+                    end
+                end
+            end, warn)
+            c().VehicleSpawn = false
+        end
+    end
+end)
+
+task.spawn(function()
+    while task.wait() do
+        if c().WalkSpeedCustom and IsAlive(Character) then
+            xpcall(function()
+                local targetSpeed = 16 * (c().WalkSpeedValue or 1)
+                if Humanoid.WalkSpeed ~= targetSpeed then
+                    Humanoid.WalkSpeed = targetSpeed
+                end
+                if Humanoid:GetAttribute("TargetWalkSpeed") ~= targetSpeed then
+                    Humanoid:SetAttribute("TargetWalkSpeed", targetSpeed)
+                end
+            end, warn)
+        end
+    end
+end)
+
+task.spawn(function()
+    while task.wait() do
+        if c().JumpPowerCustom and IsAlive(Character) then
+            xpcall(function()
+                Humanoid.JumpHeight = (c().JumpPowerValue or 4) + 3
+            end, warn)
+        end
+    end
+end)
+
+local HexRot = 0
+local ItemHexRot = 0
+RunService.RenderStepped:Connect(function(dt)
+    HexRot = HexRot + dt * 60
+    if HexRot >= 360 then HexRot = HexRot - 360 end
+    ItemHexRot = ItemHexRot + dt * 90
+    if ItemHexRot >= 360 then ItemHexRot = ItemHexRot - 360 end
+
+    AimHexRadius = c().PovSize or 200
+    local center = Vector2.new(CurrentCamera.ViewportSize.X/2, CurrentCamera.ViewportSize.Y/2)
+    local hexColor = c().RainbowPov and Color3.fromHSV((tick()%5)/5, 1, 1) or Color3.fromRGB(255,255,255)
+    updateHex(AimHex, center, AimHexRadius, c().AimAssiant or false, hexColor, HexRot)
+
+    for _, d in pairs(DrawingsData.Players) do
+        d.AimTracer.Visible = false
+        d.BoxAround.Visible = false
+        d.HpBar.Visible = false
+        if d.TargetHex then
+            for _, l in pairs(d.TargetHex) do l.Visible = false end
+        end
+    end
+
+    local closest, closestDist = nil, math.huge
+    for _, targetChar in pairs(Char.get_all()) do
+        if targetChar ~= Character and IsAlive(targetChar) then
+            local tp = Players:GetPlayerFromCharacter(targetChar)
+            if tp and not tp:GetAttribute("InMenuCharacterCreator") and not tp:GetAttribute("InSplashScreen") and not tp:GetAttribute('IsSafeZoneProtected') and not targetChar:GetAttribute('IsSpawnProtected') then
+                local root = targetChar:FindFirstChild("HumanoidRootPart")
+                if root then
+                    local sp, onScreen = W2V(root)
+                    if onScreen then
+                        local v2 = Vector2.new(sp.X, sp.Y)
+                        local ds = DistStart(v2, center)
+                        if ds <= AimHexRadius and ds < closestDist then
+                            closest = targetChar
+                            closestDist = ds
+                        end
+                    end
                 end
             end
         end
     end
-    return old(self, unpack(args))
+    c().AimAssiantTarget = closest
+
+    if closest then
+        local tp = Players:GetPlayerFromCharacter(closest)
+        if tp then
+            local d = DrawingsData.Players[tp]
+            if d then
+                local targetPart = closest:FindFirstChild((c().PartTargetSelected or "Head"))
+                if targetPart then
+                    local ps, onScreen = W2V(targetPart)
+                    if onScreen then
+                        local tCol = TracerColors[c().TracerColor or "Red"] or TracerColors.Red
+                        d.AimTracer.Color = tCol
+                        d.AimTracer.Thickness = c().TracerThickness or 1.5
+                        d.AimTracer.Visible = (c().AimAssiant and c().ShowTracer) or false
+                        d.AimTracer.From = center
+                        d.AimTracer.To = Vector2.new(ps.X, ps.Y)
+                        local targetRadius = math.clamp(1200 / ps.Z, 8, 40)
+                        updateHex(d.TargetHex, Vector2.new(ps.X, ps.Y), targetRadius, (c().AimAssiant or false) and onScreen, tCol, HexRot)
+                    end
+                end
+            end
+        end
+    end
+
+    for po, d in pairs(DrawingsData.Players) do
+        if po and IsAlive(po.Character) then
+            local charP = po.Character
+            local head = charP:FindFirstChild('Head')
+            local root = charP:FindFirstChild('HumanoidRootPart')
+            local hum = charP:FindFirstChildOfClass('Humanoid')
+            if head and root and hum then
+                local ph, onScreen = W2V(head.Position + Vector3.new(0, 0.5, 0))
+                if onScreen then
+                    d.Name.Position = Vector2.new(ph.X, ph.Y - 22)
+                    d.Name.Text = po.Name
+                    d.Name.Visible = c().NamePlayerVisual or false
+                    local pLeg = W2V(root.Position - Vector3.new(0, 3, 0))
+                    local pRoot = W2V(root)
+                    local scaleR = 1000 / pRoot.Z
+                    d.BoxAround.Size = Vector2.new(scaleR, ph.Y - pLeg.Y)
+                    d.BoxAround.Position = Vector2.new(pRoot.X - d.BoxAround.Size.X / 2, pRoot.Y - d.BoxAround.Size.Y / 2)
+                    d.BoxAround.Visible = c().BoxPlayerVisual or false
+                    d.BoxAround.Color = po:GetAttribute('IsSafeZoneProtected') and Color3.fromRGB(7,255,44) or charP:GetAttribute('IsSpawnProtected') and Color3.fromRGB(3,41,255) or Color3.fromRGB(201,12,204)
+                    d.Distance.Text = "[" .. math.floor(GetDistanceRoot(root)) .. "m]"
+                    d.Distance.Position = Vector2.new(ph.X, pLeg.Y + 5)
+                    d.Distance.Visible = c().DistancePlayerVisual or false
+                    local hp = hum.Health / hum.MaxHealth
+                    d.HpBar.From = Vector2.new(d.BoxAround.Position.X + d.BoxAround.Size.X + 5, d.BoxAround.Position.Y + d.BoxAround.Size.Y * (1 - hp))
+                    d.HpBar.To = Vector2.new(d.BoxAround.Position.X + d.BoxAround.Size.X + 5, d.BoxAround.Position.Y + d.BoxAround.Size.Y)
+                    d.HpBar.Color = Color3.new(1 - hp, hp, 0)
+                    d.HpBar.Visible = c().HealthPlayerVisual or false
+                else
+                    d.Name.Visible = false
+                    d.Distance.Visible = false
+                    d.BoxAround.Visible = false
+                    d.HpBar.Visible = false
+                end
+            else
+                d.Name.Visible = false
+                d.Distance.Visible = false
+                d.BoxAround.Visible = false
+                d.HpBar.Visible = false
+            end
+        else
+            d.Name.Visible = false
+            d.Distance.Visible = false
+            d.BoxAround.Visible = false
+            d.HpBar.Visible = false
+        end
+    end
+
+    for dropItem, _ in pairs(DrawingsData.Item) do
+        if not dropItem or not dropItem.Parent then
+            local data = DrawingsData.Item[dropItem]
+            if data then
+                removeHex(data.Hex)
+                if data.NameItem then data.NameItem:Remove() end
+                if data.Distance then data.Distance:Remove() end
+            end
+            DrawingsData.Item[dropItem] = nil
+        end
+    end
+
+    if DroppedFolder then
+        for _, dropObj in pairs(DroppedFolder:GetChildren()) do
+            if dropObj:IsA("Model") and dropObj:FindFirstChild("PickUpZone") and not dropObj:GetAttribute("Locked") then
+                if not DrawingsData.Item[dropObj] then
+                    DrawingsData.Item[dropObj] = {
+                        Hex = makeHex(6),
+                        NameItem = Draw("Text", { Color = Color3.fromRGB(255,255,255), Outline = true, Center = true, Size = 14 }),
+                        Distance = Draw("Text", { Color = Color3.fromRGB(255,255,255), Outline = true, Center = true, Size = 13 })
+                    }
+                end
+            end
+        end
+    end
+
+    for itemObj, d in pairs(DrawingsData.Item) do
+        local pz = itemObj:FindFirstChild("PickUpZone")
+        if pz then
+            local p2d, onScreen = W2V(pz)
+            if onScreen then
+                local iType = itemObj:GetAttribute("item_type")
+                local rar
+                local iF = iType and ReplicatedStorage:FindFirstChild("Items") and ReplicatedStorage.Items:FindFirstChild(iType)
+                if iF then
+                    local it = iF:FindFirstChild(itemObj.Name)
+                    if it then rar = it:GetAttribute("RarityName") end
+                end
+                local bl = c().BlacklistRarityDropVisual
+                if type(bl) ~= "table" then bl = {} end
+                local blC = countT(bl)
+                local isBL = table.find(bl, rar) ~= nil
+                local visible = (c().ItemDropVisual or false) and (itemObj.Name == "Money" or blC == 0 or not isBL)
+                local col = RarityData[rar] or Color3.fromRGB(255,255,255)
+                local dist = GetDistanceRoot(pz)
+                local radius = math.clamp(300/math.max(dist,1), 10, 45)
+                updateHex(d.Hex, p2d, radius, visible, col, ItemHexRot)
+                d.NameItem.Text = itemObj.Name
+                d.NameItem.Position = Vector2.new(p2d.X, p2d.Y - radius - 14)
+                d.NameItem.Visible = visible
+                local attrs = SortAttr(itemObj)
+                local qK = attrs[5]
+                d.Distance.Text = "[x" .. tostring(qK and itemObj:GetAttribute(qK) or "?") .. "]"
+                d.Distance.Position = Vector2.new(p2d.X, p2d.Y + radius + 4)
+                d.Distance.Visible = visible
+            else
+                for _, l in pairs(d.Hex) do l.Visible = false end
+                d.NameItem.Visible = false
+                d.Distance.Visible = false
+            end
+        end
+    end
+
+    for _, v in pairs(Char.get_all()) do
+        if v ~= Character and IsAlive(v) then
+            local root = v:FindFirstChild('HumanoidRootPart')
+            local gp = Players:GetPlayerFromCharacter(v)
+            if gp and root then
+                if not root:FindFirstChild('ItemInventoryViewer') then
+                    local viewer = Instance.new('BillboardGui')
+                    viewer.Name = "ItemInventoryViewer"
+                    viewer.AlwaysOnTop = true
+                    viewer.Adornee = root
+                    viewer.Size = UDim2.new(0, 200, 0, 30)
+                    viewer.StudsOffset = Vector3.new(0, 4, 0)
+                    viewer.Parent = root
+                    local bg = Instance.new('Frame')
+                    bg.Name = "BackgroundFrame"
+                    bg.BackgroundTransparency = 1
+                    bg.Size = UDim2.new(1,0,1,0)
+                    bg.AnchorPoint = Vector2.new(0.5,0.5)
+                    bg.Position = UDim2.new(0.5,0,0.5,0)
+                    bg.Parent = viewer
+                    local ll = Instance.new('UIListLayout')
+                    ll.FillDirection = Enum.FillDirection.Horizontal
+                    ll.HorizontalAlignment = Enum.HorizontalAlignment.Center
+                    ll.VerticalAlignment = Enum.VerticalAlignment.Center
+                    ll.Padding = UDim.new(0, 5)
+                    ll.Parent = bg
+                end
+                local inv = {}
+                local viewer = root:FindFirstChild('ItemInventoryViewer')
+                local bg = viewer and viewer:FindFirstChild('BackgroundFrame')
+                if bg then
+                    for _, cont in pairs({gp.Backpack, v}) do
+                        if cont then
+                            for _, tool in pairs(cont:GetChildren()) do
+                                if tool:IsA("Tool") and not tool:GetAttribute("JobTool") and not tool:GetAttribute("Locked") then
+                                    local iFold = (function()
+                                        local at = tool:GetAttributes()
+                                        for _, val in pairs(at) do
+                                            if type(val) == "string" and val:lower():find("melee") then
+                                                return ReplicatedStorage.Items.melee:GetChildren()
+                                            end
+                                        end
+                                        if at.AmmoType and at.Recoil then
+                                            return ReplicatedStorage.Items.gun:GetChildren()
+                                        end
+                                        return ReplicatedStorage.Items.throwable:GetChildren()
+                                    end)()
+                                    for _, iRS in pairs(iFold) do
+                                        if tool:GetAttribute("RarityName") == iRS:GetAttribute("RarityName") and tool:GetAttribute("RarityPrice") == iRS:GetAttribute("RarityPrice") then
+                                            local imgId = iRS:GetAttribute("ImageId")
+                                            if imgId then
+                                                inv[iRS.Name] = true
+                                                if not bg:FindFirstChild(iRS.Name) then
+                                                    local ico2 = Instance.new('ImageLabel')
+                                                    ico2.Name = iRS.Name
+                                                    ico2.Image = 'rbxassetid://137066731814190'
+                                                    ico2.BackgroundTransparency = 1
+                                                    ico2.BorderSizePixel = 0
+                                                    ico2.ImageColor3 = RarityData[tool:GetAttribute("RarityName")] or Color3.fromRGB(255,255,255)
+                                                    ico2.Size = UDim2.new(0,25,0,25)
+                                                    ico2.Parent = bg
+                                                    local icoB = Instance.new('ImageLabel')
+                                                    icoB.Name = "IconBase"
+                                                    icoB.Image = imgId
+                                                    icoB.BackgroundTransparency = 1
+                                                    icoB.BorderSizePixel = 0
+                                                    icoB.Size = UDim2.new(0.9,0,0.9,0)
+                                                    icoB.AnchorPoint = Vector2.new(0.5,0.5)
+                                                    icoB.Position = UDim2.new(0.5,0,0.5,0)
+                                                    icoB.Parent = ico2
+                                                end
+                                            end
+                                        end
+                                    end
+                                end
+                            end
+                        end
+                    end
+                    viewer.Enabled = (c().InventoryPlayerVisual and v:FindFirstChild('Humanoid').Health > 0) or false
+                    for _, obj in pairs(bg:GetChildren()) do
+                        if obj:IsA("ImageLabel") and not inv[obj.Name] then
+                            obj:Destroy()
+                        end
+                    end
+                end
+            end
+        end
+    end
 end)
-setreadonly(mt, true)
+
+local TargetHistory = {}
+local OldSend
+OldSend = hookfunction(Network.send, function(...)
+    local args = {...}
+    if args[1] == "shoot_gun" and c().AimAssiant and c().AimAssiantTarget then
+        local tp = c().AimAssiantTarget:FindFirstChild((c().PartTargetSelected or "Head"))
+        if tp then
+            local cp = RootPart.Position
+            local tPos = tp.Position
+            local vec = tPos - cp
+            local now = tick()
+            local grav = Vector3.new(0, -workspace.Gravity, 0)
+            local speed = 1000
+            local tt = flightTime(vec, grav, speed)
+            TargetHistory[c().AimAssiantTarget] = TargetHistory[c().AimAssiantTarget] or {}
+            if countT(TargetHistory[c().AimAssiantTarget]) >= 3 then table.remove(TargetHistory[c().AimAssiantTarget], 1) end
+            table.insert(TargetHistory[c().AimAssiantTarget], {pos = tPos, time = now})
+            local hist = TargetHistory[c().AimAssiantTarget]
+            local hC = countT(hist)
+            local vel = Vector3.zero
+            if hC == 2 then
+                local p1, p2 = hist[1], hist[2]
+                local dt = math.max(p2.time - p1.time, 1e-6)
+                vel = (p2.pos - p1.pos)/dt
+            elseif hC >= 3 then
+                local p2, p3 = hist[hC-1], hist[hC]
+                local dt2 = math.max(p3.time - p2.time, 1e-6)
+                vel = (p3.pos - p2.pos)/dt2
+            end
+            local predPos = tPos + vel * tt + Vector3.new(0, 0.001 * grav.Y * (tt*tt), 0)
+            args[3] = CFrame.new(cp, predPos)
+            if args[4] then
+                for _, v in pairs(args[4]) do
+                    for _, x in pairs(v) do
+                        x.Normal = Vector3.new(0, 1, 0)
+                        x.Position = predPos
+                        x.Instance = tp
+                    end
+                end
+            end
+            if c().ShowTracer then
+                local dT = (predPos - cp).Magnitude
+                if dT > 0.1 then
+                    local tCol = TracerColors[c().TracerColor or "Red"] or TracerColors.Red
+                    local tr = Instance.new("Part", workspace)
+                    tr.Size = Vector3.new(0.05, 0.05, dT)
+                    tr.Color = tCol
+                    tr.CFrame = CFrame.new(cp, predPos) * CFrame.new(0, 0, -dT/2)
+                    tr.Material = Enum.Material.Neon
+                    tr.CanCollide = false
+                    tr.Anchored = true
+                    Debris:AddItem(tr, c().TracerDuration or 0.4)
+                end
+            end
+        end
+    end
+    return OldSend(table.unpack(args))
+end)
+
+do
+    local cs = SprintModule.consume_stamina
+    local sb = debug.getupvalue(cs, 2).sprint_bar
+    local ou = sb.update
+    sb.update = function(...)
+        if c().InfStamina then return (function() return 1 end) end
+        return ou(...)
+    end
+end
+
+do
+    local gr = RagdollModule.is_ragdolling.get
+    RagdollModule.is_ragdolling.get = function(...)
+        local res = gr(...)
+        if res == true and c().AntiRagdoll then
+            RagdollModule.is_ragdolling.set(false)
+            Network.send("end_ragdoll_early")
+            Network.send("clear_ragdoll")
+        end
+        return res
+    end
+end
+
+local WindUI = loadstring(game:HttpGet("https://github.com/Footagesus/WindUI/releases/latest/download/main.lua"))()
+
+local ConfigMgr = loadstring(game:HttpGet("https://raw.githubusercontent.com/Yenixs/ToolScript/refs/heads/main/ConfigManager.luau"))()('DarkPower_Blockspin', c())
+ConfigMgr.SC()
+
+local Window = WindUI:CreateWindow({
+    Title = "Dark Power | Blockspin",
+    Icon = "rbxassetid://120071332053245",
+    Author = "Dark Power Hub",
+    Folder = "DarkPower",
+    Size = UDim2.fromOffset(520, 460),
+    Theme = "Dark",
+    Transparent = true,
+    Resizable = true,
+})
+
+Window:Tag({ Title = "Dark Power", Icon = "zap", Color = Color3.fromHex("#ff3060"), Radius = 10 })
+
+UserInputService.InputBegan:Connect(function(i, gp)
+    if not gp and i.KeyCode == Enum.KeyCode.T then Window:Toggle() end
+end)
+
+local Tabs = {
+    General = Window:Tab({Title = "General", Icon = "library"}),
+    Pvp = Window:Tab({Title = "PVP", Icon = "crosshair"}),
+    Visual = Window:Tab({Title = "Visual", Icon = "eye"}),
+    Vehicle = Window:Tab({Title = "Vehicle", Icon = "car"}),
+    Config = Window:Tab({Title = "Config", Icon = "save"})
+}
+Tabs.General:Select()
+
+local function Section(Tab, Text)
+    return Tab:Section({ Title = Text, Box = false, TextSize = 17, Opened = true })
+end
+
+local function Tg(def, Tab, Title, Keys)
+    local t = Tab:Toggle({
+        Title = Title,
+        Value = c()[Keys] or def,
+        Callback = function(s)
+            ConfigMgr.S()[Keys] = s
+            c()[Keys] = s
+            ConfigMgr.SG()
+        end
+    })
+    if t then t.Callback(c()[Keys]) end
+    return t
+end
+
+local function Slider(Tab, Title, Steps, Mins, Maxs, Def, Keys)
+    local s = Tab:Slider({
+        Flag = Title,
+        Title = Title,
+        Step = Steps,
+        Value = { Min = Mins, Max = Maxs, Default = c()[Keys] or Def },
+        Callback = function(v)
+            ConfigMgr.S()[Keys] = v
+            c()[Keys] = v
+            ConfigMgr.SG()
+        end
+    })
+    if s then s.Callback(c()[Keys] or Def) end
+    return s
+end
+
+local function Dropdown(Tab, Title, Keys, Values, Multi)
+    local d = Tab:Dropdown({
+        Title = Title,
+        Values = Values,
+        Multi = Multi or false,
+        AllowNone = true,
+        Value = c()[Keys] or (Multi and {} or Values[1]),
+        Callback = function(o)
+            ConfigMgr.S()[Keys] = o
+            c()[Keys] = o
+            ConfigMgr.SG()
+        end
+    })
+    if d and d.Callback then d.Callback(c()[Keys] or (Multi and {} or Values[1])) end
+    return d
+end
+
+local function Btn(Tab, Title, Desc, Callback)
+    return Tab:Button({ Title = Title, Desc = Desc or "", Callback = Callback or function() end })
+end
+
+local hSec = Section(Tabs.General, "Humanoid")
+Tg(false, hSec, "ปรับความเร็ว", "WalkSpeedCustom")
+Slider(hSec, "ค่าความเร็ว", 0.1, 1, 5, 1, "WalkSpeedValue")
+Tg(false, hSec, "ปรับการกระโดด", "JumpPowerCustom")
+Slider(hSec, "ค่ากระโดด", 1, 1, 25, 10, "JumpPowerValue")
+
+local sSec = Section(Tabs.General, "มุดดิน")
+Tg(false, sSec, "เปิดมุดดิน", "Snap")
